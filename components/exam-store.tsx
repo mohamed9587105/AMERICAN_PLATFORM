@@ -1,14 +1,14 @@
 'use client';
 import {createContext,useContext,useEffect,useMemo,useState} from 'react';
-import {questions} from '@/lib/questions';
+import {activeExam,questions} from '@/lib/exam-config';
 type ExamState={answers:(number|null)[];flags:boolean[];eliminated:number[][];notes:string[];timeLeft:number};
 type Ctx=ExamState&{setAnswer:(i:number,v:number)=>void;toggleFlag:(i:number)=>void;toggleEliminate:(i:number,v:number)=>void;setNote:(i:number,v:string)=>void;reset:()=>void;tick:()=>void};
-const makeInitial=():ExamState=>({answers:Array(questions.length).fill(null),flags:Array(questions.length).fill(false),eliminated:Array.from({length:questions.length},()=>[]),notes:Array(questions.length).fill(''),timeLeft:32*60});
+const makeInitial=():ExamState=>({answers:Array(questions.length).fill(null),flags:Array(questions.length).fill(false),eliminated:Array.from({length:questions.length},()=>[]),notes:Array(questions.length).fill(''),timeLeft:activeExam.blueprint.durationSeconds});
 const ExamContext=createContext<Ctx|null>(null);
 export function ExamProvider({children}:{children:React.ReactNode}){
  const [state,setState]=useState<ExamState>(makeInitial());
- useEffect(()=>{const raw=localStorage.getItem('sat-exam-v2');if(raw)try{setState({...makeInitial(),...JSON.parse(raw)})}catch{}},[]);
- useEffect(()=>{localStorage.setItem('sat-exam-v2',JSON.stringify(state))},[state]);
+ useEffect(()=>{const raw=localStorage.getItem('american-platform-exam-v6');if(raw)try{setState({...makeInitial(),...JSON.parse(raw)})}catch{}},[]);
+ useEffect(()=>{localStorage.setItem('american-platform-exam-v6',JSON.stringify(state))},[state]);
  const value=useMemo<Ctx>(()=>({...state,
   setAnswer:(i,v)=>setState(s=>({...s,answers:s.answers.map((a,x)=>x===i?v:a)})),
   toggleFlag:(i)=>setState(s=>({...s,flags:s.flags.map((f,x)=>x===i?!f:f)})),
