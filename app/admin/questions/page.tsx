@@ -1,199 +1,76 @@
 'use client';
 
-import {useMemo, useState} from 'react';
+import {useMemo, useRef, useState} from 'react';
 import Link from 'next/link';
 import {satReadingWritingModule1} from '@/data/sat/reading-writing/module-1';
 import type {Difficulty, Question, SectionCode} from '@/types/question';
 
-const STORAGE_KEY = 'american-platform-question-bank-v2';
-const FAVORITES_KEY = 'american-platform-question-favorites-v1';
-const choiceIds = ['A','B','C','D'] as const;
+const STORAGE_KEY='american-platform-question-bank-v2';
+const TAXONOMY_KEY='american-platform-question-taxonomy-v1';
+const CATEGORY_TAG='category:';
+const ids=['A','B','C','D'];
 
-type FolderFilter = 'ALL' | 'SAT' | 'READING_WRITING' | 'MATH' | 'FAVORITES';
-type ValidationIssue = {field:string; message:string};
+type Category={id:string;name:string;systemSection:SectionCode;lessons:string[]};
+type Taxonomy={categories:Category[]};
+const defaultTaxonomy:Taxonomy={categories:[
+  {id:'reading',name:'Reading',systemSection:'READING_WRITING',lessons:['Central Ideas and Details','Command of Evidence','Inferences','Words in Context','Text Structure and Purpose','Cross-Text Connections']},
+  {id:'writing',name:'Writing',systemSection:'READING_WRITING',lessons:['Transitions','Rhetorical Synthesis','Boundaries','Form, Structure, and Sense']},
+  {id:'math',name:'Math',systemSection:'MATH',lessons:['Algebra','Advanced Math','Problem-Solving and Data Analysis','Geometry and Trigonometry']}
+]};
+const cloneTaxonomy=():Taxonomy=>JSON.parse(JSON.stringify(defaultTaxonomy));
+const blank=(category:Category=defaultTaxonomy.categories[0]):Question=>({id:`SAT-RW-${Date.now()}`,exam:'SAT',section:category.systemSection,module:1,domain:'Information and Ideas',skill:category.lessons[0]||'',difficulty:'MEDIUM',estimatedTimeSeconds:70,passage:'',prompt:'',choices:ids.map(id=>({id,text:''})),correctChoiceId:'A',explanation:'',commonMistakes:[],tags:[`${CATEGORY_TAG}${category.id}`]});
+function load(){if(typeof window==='undefined')return satReadingWritingModule1;try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null')||satReadingWritingModule1}catch{return satReadingWritingModule1}}
+function loadTaxonomy(){if(typeof window==='undefined')return cloneTaxonomy();try{return JSON.parse(localStorage.getItem(TAXONOMY_KEY)||'null')||cloneTaxonomy()}catch{return cloneTaxonomy()}}
+function text(html=''){return html.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').trim()}
+function categoryIdOf(q:Question,taxonomy:Taxonomy){const tagged=q.tags.find(t=>t.startsWith(CATEGORY_TAG))?.slice(CATEGORY_TAG.length);if(tagged&&taxonomy.categories.some(c=>c.id===tagged))return tagged;if(q.section==='MATH')return taxonomy.categories.find(c=>c.systemSection==='MATH')?.id||taxonomy.categories[0]?.id||'';return ['Expression of Ideas','Standard English Conventions'].includes(q.domain)?(taxonomy.categories.find(c=>c.id==='writing')?.id||taxonomy.categories[0]?.id||''):(taxonomy.categories.find(c=>c.id==='reading')?.id||taxonomy.categories[0]?.id||'')}
+function withCategory(q:Question,category:Category){return {...q,section:category.systemSection,tags:[...q.tags.filter(t=>!t.startsWith(CATEGORY_TAG)),`${CATEGORY_TAG}${category.id}`]}}
 
-const blankQuestion = (): Question => ({
-  id:`SAT-RW-M1-${Date.now()}`,
-  exam:'SAT', section:'READING_WRITING', module:1,
-  domain:'Information and Ideas', skill:'Central Ideas and Details', difficulty:'MEDIUM', estimatedTimeSeconds:70,
-  passage:'', prompt:'', choices:choiceIds.map(id=>({id,text:''})),
-  correctChoiceId:'A', explanation:'', commonMistakes:[], tags:[]
-});
-
-function loadQuestions(): Question[] {
-  if (typeof window === 'undefined') return satReadingWritingModule1;
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : satReadingWritingModule1;
-  } catch { return satReadingWritingModule1; }
+function RichEditor({label,value,onChange,placeholder,minHeight=130}:{label:string;value:string;onChange:(v:string)=>void;placeholder:string;minHeight?:number}){
+  const ref=useRef<HTMLDivElement>(null);const [full,setFull]=useState(false);
+  const run=(cmd:string,val?:string)=>{ref.current?.focus();document.execCommand(cmd,false,val);onChange(ref.current?.innerHTML||'')};
+  const addLink=()=>{const url=window.prompt('اكتب رابط الصفحة');if(url)run('createLink',url)};
+  const addImage=()=>{const url=window.prompt('الصق رابط الصورة');if(url)run('insertImage',url)};
+  return <div className={`simple-rich ${full?'fullscreen':''}`}><div className="simple-rich-title"><b>{label}</b><button type="button" onClick={()=>setFull(!full)}>{full?'تصغير':'ملء الشاشة'}</button></div><div className="simple-toolbar">
+      <select aria-label="نوع الخط" onChange={e=>run('fontName',e.target.value)} defaultValue="Arial"><option>Arial</option><option>Georgia</option><option>Times New Roman</option><option>Tahoma</option><option>Courier New</option></select>
+      <select aria-label="حجم الخط" onChange={e=>run('fontSize',e.target.value)} defaultValue="3"><option value="1">صغير جدًا</option><option value="2">صغير</option><option value="3">عادي</option><option value="4">كبير</option><option value="5">أكبر</option><option value="6">عنوان</option><option value="7">عنوان كبير</option></select>
+      <button type="button" onClick={()=>run('bold')}><b>B</b></button><button type="button" onClick={()=>run('italic')}><i>I</i></button><button type="button" onClick={()=>run('underline')}><u>U</u></button><button type="button" onClick={()=>run('strikeThrough')}><s>S</s></button>
+      <label className="color-tool" title="لون الخط">A<input type="color" onChange={e=>run('foreColor',e.target.value)}/></label><label className="color-tool highlight" title="لون التظليل">▰<input type="color" onChange={e=>run('hiliteColor',e.target.value)}/></label>
+      <button type="button" onClick={()=>run('justifyLeft')}>⇤</button><button type="button" onClick={()=>run('justifyCenter')}>≡</button><button type="button" onClick={()=>run('justifyRight')}>⇥</button><button type="button" onClick={()=>run('insertUnorderedList')}>• قائمة</button><button type="button" onClick={()=>run('insertOrderedList')}>1. قائمة</button>
+      <button type="button" onClick={addLink}>رابط</button><button type="button" onClick={addImage}>صورة</button><button type="button" onClick={()=>run('subscript')}>X₂</button><button type="button" onClick={()=>run('superscript')}>X²</button><button type="button" onClick={()=>run('undo')}>↶</button><button type="button" onClick={()=>run('redo')}>↷</button><button type="button" onClick={()=>run('removeFormat')}>مسح التنسيق</button>
+    </div><div ref={ref} className="simple-editor-area" style={{minHeight}} contentEditable suppressContentEditableWarning data-placeholder={placeholder} dangerouslySetInnerHTML={{__html:value}} onInput={e=>onChange(e.currentTarget.innerHTML)}/></div>
 }
-function loadFavorites(): string[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
-}
-function validateQuestion(q:Question, all:Question[]):ValidationIssue[]{
-  const issues:ValidationIssue[]=[];
-  if(!q.id.trim()) issues.push({field:'ID',message:'أدخل معرفًا فريدًا للسؤال.'});
-  if(all.some(x=>x.id===q.id && x!==q)) issues.push({field:'ID',message:'معرف السؤال مستخدم بالفعل.'});
-  if(!q.domain.trim()) issues.push({field:'Domain',message:'اختر أو اكتب الـDomain.'});
-  if(!q.skill.trim()) issues.push({field:'Skill',message:'اختر أو اكتب المهارة.'});
-  if(!q.prompt.trim()) issues.push({field:'Question',message:'نص السؤال مطلوب.'});
-  if(q.choices.length!==4) issues.push({field:'Choices',message:'السؤال يجب أن يحتوي على أربعة اختيارات.'});
-  q.choices.forEach(c=>{if(!c.text.trim()) issues.push({field:`Choice ${c.id}`,message:`نص الاختيار ${c.id} فارغ.`})});
-  if(!q.choices.some(c=>c.id===q.correctChoiceId)) issues.push({field:'Correct answer',message:'حدد إجابة صحيحة.'});
-  if(q.estimatedTimeSeconds<10) issues.push({field:'Time',message:'الوقت المتوقع يجب ألا يقل عن 10 ثوانٍ.'});
-  if(!q.explanation.trim()) issues.push({field:'Explanation',message:'أضف شرحًا للإجابة؛ يمكن الحفظ كمسودة بدونه.'});
-  return issues;
-}
-function isReady(q:Question){return validateQuestion(q,[q]).filter(i=>i.field!=='Explanation').length===0 && !!q.explanation.trim()}
 
-export default function QuestionBankCmsPro(){
-  const [questions,setQuestions]=useState<Question[]>(loadQuestions);
-  const [favorites,setFavorites]=useState<string[]>(loadFavorites);
-  const [selectedId,setSelectedId]=useState(questions[0]?.id ?? '');
-  const [query,setQuery]=useState('');
-  const [difficulty,setDifficulty]=useState<'ALL'|Difficulty>('ALL');
-  const [section,setSection]=useState<'ALL'|SectionCode>('ALL');
-  const [domain,setDomain]=useState('ALL');
-  const [skill,setSkill]=useState('ALL');
-  const [moduleFilter,setModuleFilter]=useState('ALL');
-  const [folder,setFolder]=useState<FolderFilter>('ALL');
-  const [editing,setEditing]=useState<Question|null>(null);
-  const [validation,setValidation]=useState<ValidationIssue[]>([]);
-  const [toast,setToast]=useState('');
-
-  const selected=questions.find(q=>q.id===selectedId) ?? questions[0];
-  const domains=useMemo(()=>Array.from(new Set(questions.map(q=>q.domain))).sort(),[questions]);
-  const skills=useMemo(()=>Array.from(new Set(questions.map(q=>q.skill))).sort(),[questions]);
-  const modules=useMemo(()=>Array.from(new Set(questions.map(q=>q.module))).sort((a,b)=>a-b),[questions]);
-
-  const filtered=useMemo(()=>questions.filter(q=>{
-    const hay=`${q.id} ${q.domain} ${q.skill} ${q.prompt} ${q.tags.join(' ')}`.toLowerCase();
-    const folderOk=folder==='ALL'||folder==='SAT'||(folder==='FAVORITES'&&favorites.includes(q.id))||q.section===folder;
-    return folderOk && hay.includes(query.toLowerCase()) && (difficulty==='ALL'||q.difficulty===difficulty) && (section==='ALL'||q.section===section) && (domain==='ALL'||q.domain===domain) && (skill==='ALL'||q.skill===skill) && (moduleFilter==='ALL'||String(q.module)===moduleFilter);
-  }),[questions,query,difficulty,section,domain,skill,moduleFilter,folder,favorites]);
-
-  const stats=useMemo(()=>({
-    total:questions.length,
-    ready:questions.filter(isReady).length,
-    draft:questions.filter(q=>!isReady(q)).length,
-    favorites:favorites.length,
-    rw:questions.filter(q=>q.section==='READING_WRITING').length,
-    math:questions.filter(q=>q.section==='MATH').length,
-  }),[questions,favorites]);
-
-  function notify(message:string){setToast(message);window.setTimeout(()=>setToast(''),1800)}
-  function persist(next:Question[]){setQuestions(next);localStorage.setItem(STORAGE_KEY,JSON.stringify(next));}
-  function persistFavorites(next:string[]){setFavorites(next);localStorage.setItem(FAVORITES_KEY,JSON.stringify(next));}
-  function openEditor(q:Question){setValidation([]);setEditing(structuredClone(q))}
-  function saveQuestion(){
-    if(!editing) return;
-    const issues=validateQuestion(editing,questions.filter(q=>q.id!==editing.id));
-    setValidation(issues);
-    const blocking=issues.filter(i=>i.field!=='Explanation');
-    if(blocking.length){notify('راجع حقول السؤال قبل الحفظ');return;}
-    const exists=questions.some(q=>q.id===editing.id);
-    const next=exists?questions.map(q=>q.id===editing.id?editing:q):[editing,...questions];
-    persist(next);setSelectedId(editing.id);setEditing(null);setValidation([]);notify(exists?'تم تحديث السؤال':'تمت إضافة السؤال');
-  }
-  function removeQuestion(id:string){
-    if(!confirm('حذف هذا السؤال نهائيًا من النسخة المحلية؟')) return;
-    const next=questions.filter(q=>q.id!==id);persist(next);persistFavorites(favorites.filter(x=>x!==id));setSelectedId(next[0]?.id??'');notify('تم حذف السؤال');
-  }
-  function duplicateQuestion(q:Question){
-    const copy:Question={...structuredClone(q),id:`${q.id}-COPY-${Date.now().toString().slice(-5)}`};
-    persist([copy,...questions]);setSelectedId(copy.id);openEditor(copy);notify('تم إنشاء نسخة قابلة للتعديل');
-  }
-  function toggleFavorite(id:string){
-    const next=favorites.includes(id)?favorites.filter(x=>x!==id):[...favorites,id];persistFavorites(next);notify(next.includes(id)?'أضيف للمفضلة':'أزيل من المفضلة');
-  }
-  function resetBank(){if(confirm('استعادة بنك الأسئلة الأساسي؟ ستُحذف التعديلات المحلية.')){persist(satReadingWritingModule1);persistFavorites([]);setSelectedId(satReadingWritingModule1[0]?.id??'');notify('تمت استعادة البنك الأساسي')}}
-  function exportJson(){
-    const blob=new Blob([JSON.stringify({version:2,exportedAt:new Date().toISOString(),questions},null,2)],{type:'application/json'});
-    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`american-platform-question-bank-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url);notify('تم تصدير بنك الأسئلة');
-  }
-  function clearFilters(){setQuery('');setDifficulty('ALL');setSection('ALL');setDomain('ALL');setSkill('ALL');setModuleFilter('ALL');setFolder('ALL')}
-  function insertMarkup(field:'passage'|'prompt'|'explanation',before:string,after=before){
-    if(!editing)return;const value=String(editing[field]??'');setEditing({...editing,[field]:`${value}${before}نص${after}`});
-  }
-
-  return <main className="cms-pro-page">
-    <header className="cms-pro-topbar">
-      <div className="cms-brand"><Link href="/">AP</Link><div><b>Question Bank CMS Pro</b><span>American Platform • V9</span></div></div>
-      <div className="cms-pro-actions"><Link className="secondary" href="/admin/questions/import">استيراد جماعي</Link><button className="secondary" onClick={exportJson}>تصدير</button><button className="primary" onClick={()=>openEditor(blankQuestion())}>+ سؤال جديد</button></div>
-    </header>
-
-    <section className="cms-pro-shell">
-      <aside className="cms-tree">
-        <div className="tree-title"><span>المكتبة</span><button onClick={clearFilters}>إعادة ضبط</button></div>
-        <button className={folder==='ALL'?'active':''} onClick={()=>setFolder('ALL')}><span>▦ كل الأسئلة</span><b>{stats.total}</b></button>
-        <button className={folder==='FAVORITES'?'active':''} onClick={()=>setFolder('FAVORITES')}><span>★ المفضلة</span><b>{stats.favorites}</b></button>
-        <div className="tree-group"><strong>SAT</strong>
-          <button className={folder==='SAT'?'active':''} onClick={()=>setFolder('SAT')}><span>جميع أقسام SAT</span><b>{stats.total}</b></button>
-          <button className={folder==='READING_WRITING'?'active':''} onClick={()=>setFolder('READING_WRITING')}><span>↳ Reading & Writing</span><b>{stats.rw}</b></button>
-          <button className={folder==='MATH'?'active':''} onClick={()=>setFolder('MATH')}><span>↳ Math</span><b>{stats.math}</b></button>
-        </div>
-        <div className="tree-group disabled"><strong>قريبًا</strong><span>EST</span><span>ACT</span></div>
-        <div className="tree-health"><div><span>جاهز للنشر</span><b>{stats.ready}</b></div><div><span>مسودة</span><b>{stats.draft}</b></div></div>
-        <button className="tree-reset" onClick={resetBank}>استعادة البنك الأساسي</button>
-      </aside>
-
-      <section className="cms-pro-main">
-        <div className="cms-pro-heading"><div><span className="eyebrow">CONTENT OPERATIONS</span><h1>بنك الأسئلة</h1><p>نظّم، راجع، واعتمد أسئلة SAT قبل استخدامها داخل الامتحانات.</p></div><div className="cms-mini-stats"><article><span>الكل</span><b>{stats.total}</b></article><article><span>جاهز</span><b>{stats.ready}</b></article><article><span>مسودة</span><b>{stats.draft}</b></article></div></div>
-
-        <div className="cms-pro-toolbar">
-          <div className="search-box">⌕<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث بالـID أو المهارة أو نص السؤال..."/></div>
-          <select value={section} onChange={e=>setSection(e.target.value as 'ALL'|SectionCode)}><option value="ALL">كل الأقسام</option><option value="READING_WRITING">Reading & Writing</option><option value="MATH">Math</option></select>
-          <select value={difficulty} onChange={e=>setDifficulty(e.target.value as 'ALL'|Difficulty)}><option value="ALL">كل الصعوبات</option><option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option></select>
-          <select value={domain} onChange={e=>setDomain(e.target.value)}><option value="ALL">كل Domains</option>{domains.map(x=><option key={x}>{x}</option>)}</select>
-          <select value={skill} onChange={e=>setSkill(e.target.value)}><option value="ALL">كل Skills</option>{skills.map(x=><option key={x}>{x}</option>)}</select>
-          <select value={moduleFilter} onChange={e=>setModuleFilter(e.target.value)}><option value="ALL">كل Modules</option>{modules.map(x=><option key={x} value={x}>Module {x}</option>)}</select>
-        </div>
-
-        <div className="cms-pro-content">
-          <aside className="cms-question-list">
-            <div className="list-caption"><b>{filtered.length} سؤال</b><span>اضغط للمعاينة</span></div>
-            <div className="list-scroll">{filtered.map(q=>{
-              const ready=isReady(q);return <button key={q.id} className={selected?.id===q.id?'active':''} onClick={()=>setSelectedId(q.id)}>
-                <div className="item-top"><code>{q.id}</code><span className={`status-dot ${ready?'ready':'draft'}`}>{ready?'جاهز':'مسودة'}</span></div>
-                <strong>{q.skill}</strong><p>{q.prompt||'سؤال بدون نص'}</p>
-                <div className="item-meta"><span>{q.domain}</span><em className={`difficulty ${q.difficulty.toLowerCase()}`}>{q.difficulty}</em>{favorites.includes(q.id)&&<i>★</i>}</div>
-              </button>})}{!filtered.length&&<div className="empty-state">لا توجد نتائج مطابقة للفلاتر الحالية.</div>}</div>
-          </aside>
-
-          <article className="cms-pro-preview">{selected?<>
-            <div className="pro-preview-head"><div><span>{selected.exam} • {selected.section.replace('_',' & ')} • Module {selected.module}</span><h2>{selected.skill}</h2><p>{selected.id}</p></div><div className="preview-command-bar"><button title="مفضلة" className={favorites.includes(selected.id)?'fav active':'fav'} onClick={()=>toggleFavorite(selected.id)}>★</button><button className="secondary" onClick={()=>duplicateQuestion(selected)}>نسخ</button><button className="secondary" onClick={()=>openEditor(selected)}>تعديل</button><button className="danger" onClick={()=>removeQuestion(selected.id)}>حذف</button></div></div>
-            <div className="quality-strip"><div><span>الحالة</span><b className={isReady(selected)?'ready-text':'draft-text'}>{isReady(selected)?'جاهز للاستخدام':'يحتاج مراجعة'}</b></div><div><span>Domain</span><b>{selected.domain}</b></div><div><span>Difficulty</span><b>{selected.difficulty}</b></div><div><span>Expected</span><b>{selected.estimatedTimeSeconds}s</b></div></div>
-            <div className="exam-preview-canvas">
-              {selected.passage&&<section className="exam-preview-passage"><div className="preview-label">PASSAGE</div>{selected.passage.split('\n\n').map((p,i)=><p key={i}>{p}</p>)}</section>}
-              <section className="exam-preview-question"><div className="preview-label">QUESTION</div><h3>{selected.prompt}</h3><div className="pro-preview-choices">{selected.choices.map(c=><div key={c.id} className={c.id===selected.correctChoiceId?'correct':''}><b>{c.id}</b><span>{c.text}</span>{c.id===selected.correctChoiceId&&<small>✓ Correct</small>}</div>)}</div></section>
-            </div>
-            <div className="preview-bottom-grid"><section><span>Explanation</span><p>{selected.explanation||'لا يوجد شرح حتى الآن.'}</p></section><section><span>Tags</span><div className="tag-row">{selected.tags.length?selected.tags.map(t=><i key={t}>{t}</i>):<p>—</p>}</div></section><section><span>Common mistakes</span><p>{selected.commonMistakes.join(' • ')||'—'}</p></section></div>
-          </>:<div className="empty-state">أضف أول سؤال إلى البنك.</div>}</article>
-        </div>
-      </section>
-    </section>
-
-    {editing&&<div className="cms-modal"><div className="cms-pro-editor">
-      <div className="editor-head"><div><span className="eyebrow">AUTHORING STUDIO</span><h2>{questions.some(q=>q.id===editing.id)?'تعديل السؤال':'إنشاء سؤال جديد'}</h2><p>املأ البيانات ثم راجع مؤشر الجودة قبل الحفظ.</p></div><button className="close-editor" onClick={()=>setEditing(null)}>×</button></div>
-      {validation.length>0&&<div className="validation-panel"><b>مراجعة الجودة</b><ul>{validation.map((x,i)=><li key={i}><strong>{x.field}:</strong> {x.message}</li>)}</ul></div>}
-      <div className="form-section"><h3>التصنيف</h3><div className="form-grid pro">
-        <label>ID<input value={editing.id} onChange={e=>setEditing({...editing,id:e.target.value})}/></label>
-        <label>Exam<select value={editing.exam} onChange={e=>setEditing({...editing,exam:e.target.value as Question['exam']})}><option>SAT</option><option>EST</option><option>ACT</option></select></label>
-        <label>Section<select value={editing.section} onChange={e=>setEditing({...editing,section:e.target.value as SectionCode})}><option value="READING_WRITING">Reading & Writing</option><option value="MATH">Math</option></select></label>
-        <label>Module<input type="number" min="1" value={editing.module} onChange={e=>setEditing({...editing,module:Number(e.target.value)})}/></label>
-        <label>Difficulty<select value={editing.difficulty} onChange={e=>setEditing({...editing,difficulty:e.target.value as Difficulty})}><option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option></select></label>
-        <label>Expected seconds<input type="number" min="10" value={editing.estimatedTimeSeconds} onChange={e=>setEditing({...editing,estimatedTimeSeconds:Number(e.target.value)})}/></label>
-        <label className="span-2">Domain<input list="domain-list" value={editing.domain} onChange={e=>setEditing({...editing,domain:e.target.value})}/><datalist id="domain-list">{domains.map(x=><option key={x} value={x}/>)}</datalist></label>
-        <label className="span-2">Skill<input list="skill-list" value={editing.skill} onChange={e=>setEditing({...editing,skill:e.target.value})}/><datalist id="skill-list">{skills.map(x=><option key={x} value={x}/>)}</datalist></label>
-      </div></div>
-      <div className="form-section"><div className="section-with-tools"><h3>Passage</h3><div><button onClick={()=>insertMarkup('passage','**')}>B</button><button onClick={()=>insertMarkup('passage','_')}>I</button><button onClick={()=>insertMarkup('passage','__')}>U</button></div></div><textarea rows={7} value={editing.passage??''} onChange={e=>setEditing({...editing,passage:e.target.value})} placeholder="اكتب القطعة هنا..."/></div>
-      <div className="form-section"><div className="section-with-tools"><h3>Question</h3><div><button onClick={()=>insertMarkup('prompt','**')}>B</button><button onClick={()=>insertMarkup('prompt','_')}>I</button></div></div><textarea rows={3} value={editing.prompt} onChange={e=>setEditing({...editing,prompt:e.target.value})} placeholder="اكتب نص السؤال..."/></div>
-      <div className="form-section"><h3>Choices & correct answer</h3><div className="choice-editor pro">{editing.choices.map((choice,index)=><label key={choice.id} className={editing.correctChoiceId===choice.id?'correct-choice':''}><span><input type="radio" name="correct" checked={editing.correctChoiceId===choice.id} onChange={()=>setEditing({...editing,correctChoiceId:choice.id})}/>{choice.id}</span><input value={choice.text} onChange={e=>{const choices=[...editing.choices];choices[index]={...choice,text:e.target.value};setEditing({...editing,choices})}} placeholder={`Choice ${choice.id}`}/></label>)}</div></div>
-      <div className="form-section"><div className="section-with-tools"><h3>Explanation</h3><div><button onClick={()=>insertMarkup('explanation','**')}>B</button><button onClick={()=>insertMarkup('explanation','- ','')}>List</button></div></div><textarea rows={4} value={editing.explanation} onChange={e=>setEditing({...editing,explanation:e.target.value})} placeholder="اشرح لماذا الإجابة صحيحة..."/></div>
-      <div className="form-grid pro final-fields"><label className="span-2">Tags<input value={editing.tags.join(', ')} onChange={e=>setEditing({...editing,tags:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)})} placeholder="inference, medium, module-1"/></label><label className="span-2">Common mistakes<input value={editing.commonMistakes.join(', ')} onChange={e=>setEditing({...editing,commonMistakes:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)})} placeholder="اختيار إجابة جزئية، تجاهل دليل النص"/></label></div>
-      <div className="editor-footer"><div className="quality-meter"><span>جودة السؤال</span><b>{Math.max(0,100-validateQuestion(editing,questions.filter(q=>q.id!==editing.id)).length*14)}%</b></div><div className="editor-actions"><button className="secondary" onClick={()=>{setValidation(validateQuestion(editing,questions.filter(q=>q.id!==editing.id)));notify('تم فحص السؤال')}}>فحص الجودة</button><button className="secondary" onClick={()=>setEditing(null)}>إلغاء</button><button className="primary" onClick={saveQuestion}>حفظ السؤال</button></div></div>
-    </div></div>}
-    {toast&&<div className="cms-toast">{toast}</div>}
-  </main>
+export default function SimpleQuestionAdmin(){
+ const [taxonomy,setTaxonomy]=useState<Taxonomy>(loadTaxonomy);const [questions,setQuestions]=useState<Question[]>(load);const [editing,setEditing]=useState<Question>(()=>blank(loadTaxonomy().categories[0]||defaultTaxonomy.categories[0]));const [mode,setMode]=useState<'quick'|'advanced'>('quick');const [query,setQuery]=useState('');const [toast,setToast]=useState('');const [preview,setPreview]=useState(false);const [manager,setManager]=useState<'categories'|'lessons'|null>(null);
+ const selectedCategoryId=categoryIdOf(editing,taxonomy);const selectedCategory=taxonomy.categories.find(c=>c.id===selectedCategoryId)||taxonomy.categories[0];
+ const filtered=useMemo(()=>questions.filter(q=>`${q.id} ${q.skill} ${text(q.prompt)}`.toLowerCase().includes(query.toLowerCase())).slice(0,50),[questions,query]);
+ const notify=(s:string)=>{setToast(s);setTimeout(()=>setToast(''),2200)};
+ const persist=(next:Question[])=>{setQuestions(next);localStorage.setItem(STORAGE_KEY,JSON.stringify(next))};
+ const persistTaxonomy=(next:Taxonomy)=>{setTaxonomy(next);localStorage.setItem(TAXONOMY_KEY,JSON.stringify(next))};
+ const valid=()=>{if(!selectedCategory)return 'أضف قسمًا أولًا';if(!editing.skill.trim())return 'اختر اسم الدرس';if(!text(editing.prompt))return 'اكتب نص السؤال';if(editing.choices.some(c=>!text(c.text)))return 'أكمل جميع الاختيارات';return ''};
+ const save=(nextNew=false,draft=false)=>{const err=valid();if(err&&!draft){notify(err);return}const exists=questions.some(q=>q.id===editing.id);const next=exists?questions.map(q=>q.id===editing.id?editing:q):[editing,...questions];persist(next);notify(draft?'تم حفظ المسودة':'تم حفظ السؤال');if(nextNew&&taxonomy.categories[0])setEditing(blank(taxonomy.categories[0]))};
+ const updateChoice=(i:number,value:string)=>{const choices=[...editing.choices];choices[i]={...choices[i],text:value};setEditing({...editing,choices})};
+ const duplicate=()=>setEditing({...structuredClone(editing),id:`${editing.id}-COPY-${Date.now().toString().slice(-4)}`});
+ const selectCategory=(id:string)=>{const category=taxonomy.categories.find(c=>c.id===id);if(category)setEditing(withCategory({...editing,skill:category.lessons[0]||'',domain:category.systemSection==='MATH'?'Algebra':'Information and Ideas'},category))};
+ const addCategory=()=>{const name=window.prompt('اكتب اسم القسم الجديد');if(!name?.trim())return;const id=`category-${Date.now()}`;const category:Category={id,name:name.trim(),systemSection:'READING_WRITING',lessons:[]};persistTaxonomy({categories:[...taxonomy.categories,category]});notify('تمت إضافة القسم')};
+ const renameCategory=(category:Category)=>{const name=window.prompt('تعديل اسم القسم',category.name);if(!name?.trim())return;persistTaxonomy({categories:taxonomy.categories.map(c=>c.id===category.id?{...c,name:name.trim()}:c)});notify('تم تعديل اسم القسم')};
+ const deleteCategory=(category:Category)=>{const linked=questions.filter(q=>categoryIdOf(q,taxonomy)===category.id);if(linked.length){const targets=taxonomy.categories.filter(c=>c.id!==category.id);if(!targets.length){notify('لا يمكن حذف القسم الوحيد');return}const targetName=window.prompt(`القسم مرتبط بـ ${linked.length} سؤال. اكتب اسم القسم الذي تريد نقل الأسئلة إليه:\n${targets.map(c=>c.name).join(' - ')}`);const target=targets.find(c=>c.name.toLowerCase()===targetName?.trim().toLowerCase());if(!target){notify('لم يتم الحذف: اختر اسم قسم صحيح للنقل');return}persist(questions.map(q=>categoryIdOf(q,taxonomy)===category.id?withCategory({...q,skill:target.lessons[0]||q.skill},target):q));}else if(!window.confirm(`حذف قسم ${category.name}؟`))return;const next={categories:taxonomy.categories.filter(c=>c.id!==category.id)};persistTaxonomy(next);if(selectedCategoryId===category.id&&next.categories[0])setEditing(blank(next.categories[0]));notify('تم حذف القسم')};
+ const addLesson=()=>{if(!selectedCategory)return;const name=window.prompt(`اسم الدرس الجديد داخل ${selectedCategory.name}`);if(!name?.trim())return;if(selectedCategory.lessons.some(x=>x.toLowerCase()===name.trim().toLowerCase())){notify('اسم الدرس موجود بالفعل');return}persistTaxonomy({categories:taxonomy.categories.map(c=>c.id===selectedCategory.id?{...c,lessons:[...c.lessons,name.trim()]}:c)});setEditing({...editing,skill:name.trim()});notify('تمت إضافة الدرس')};
+ const renameLesson=(oldName:string)=>{if(!selectedCategory)return;const name=window.prompt('تعديل اسم الدرس',oldName);if(!name?.trim())return;persistTaxonomy({categories:taxonomy.categories.map(c=>c.id===selectedCategory.id?{...c,lessons:c.lessons.map(x=>x===oldName?name.trim():x)}:c)});persist(questions.map(q=>categoryIdOf(q,taxonomy)===selectedCategory.id&&q.skill===oldName?{...q,skill:name.trim()}:q));if(editing.skill===oldName)setEditing({...editing,skill:name.trim()});notify('تم تعديل اسم الدرس والأسئلة المرتبطة')};
+ const deleteLesson=(lesson:string)=>{if(!selectedCategory)return;const linked=questions.filter(q=>categoryIdOf(q,taxonomy)===selectedCategory.id&&q.skill===lesson);let replacement='';if(linked.length){const choices=selectedCategory.lessons.filter(x=>x!==lesson);if(!choices.length){notify('أضف درسًا آخر أولًا لنقل الأسئلة إليه');return}replacement=window.prompt(`الدرس مرتبط بـ ${linked.length} سؤال. اكتب اسم الدرس البديل:\n${choices.join(' - ')}`)?.trim()||'';if(!choices.some(x=>x.toLowerCase()===replacement.toLowerCase())){notify('لم يتم الحذف: اختر درسًا صحيحًا للنقل');return}replacement=choices.find(x=>x.toLowerCase()===replacement.toLowerCase())||'';persist(questions.map(q=>categoryIdOf(q,taxonomy)===selectedCategory.id&&q.skill===lesson?{...q,skill:replacement}:q));}else if(!window.confirm(`حذف درس ${lesson}؟`))return;persistTaxonomy({categories:taxonomy.categories.map(c=>c.id===selectedCategory.id?{...c,lessons:c.lessons.filter(x=>x!==lesson)}:c)});if(editing.skill===lesson)setEditing({...editing,skill:replacement||selectedCategory.lessons.find(x=>x!==lesson)||''});notify('تم حذف الدرس')};
+ return <main className="simple-admin-page" dir="rtl">
+   <header className="simple-admin-header"><div><Link href="/">المنصة</Link><span>/</span><b>بنك الأسئلة</b></div><div><Link className="light-btn" href="/admin/questions/import">استيراد جماعي</Link><button className="main-btn" onClick={()=>taxonomy.categories[0]&&setEditing(blank(taxonomy.categories[0]))}>+ سؤال جديد</button></div></header>
+   <section className="simple-admin-layout"><aside className="simple-question-side"><div className="side-head"><h2>الأسئلة</h2><b>{questions.length}</b></div><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث باسم الدرس أو السؤال..."/><div className="side-list">{filtered.map(q=>{const cat=taxonomy.categories.find(c=>c.id===categoryIdOf(q,taxonomy));return <button key={q.id} className={q.id===editing.id?'active':''} onClick={()=>setEditing(structuredClone(q))}><span>{cat?.name||'غير مصنف'} · {q.skill}</span><b>{text(q.prompt)||'سؤال بدون نص'}</b><small>{q.difficulty} · {q.id}</small></button>})}</div></aside>
+    <section className="simple-authoring"><div className="authoring-top"><div><span>إدخال سؤال</span><h1>{questions.some(q=>q.id===editing.id)?'تعديل السؤال':'سؤال جديد'}</h1><p>كل ما تحتاجه في شاشة واحدة، بدون خطوات معقدة.</p></div><div className="mode-switch"><button className={mode==='quick'?'active':''} onClick={()=>setMode('quick')}>الوضع السريع</button><button className={mode==='advanced'?'active':''} onClick={()=>setMode('advanced')}>خيارات متقدمة</button></div></div>
+      <div className="classification-strip"><label><span>القسم</span><div className="managed-select"><select value={selectedCategoryId} onChange={e=>selectCategory(e.target.value)}>{taxonomy.categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><button type="button" onClick={()=>setManager('categories')}>إدارة</button></div></label>
+       <label className="lesson-field"><span>اسم الدرس</span><div className="managed-select"><select value={editing.skill} onChange={e=>setEditing({...editing,skill:e.target.value})}><option value="">اختر اسم الدرس</option>{selectedCategory?.lessons.map(x=><option key={x} value={x}>{x}</option>)}</select><button type="button" onClick={()=>setManager('lessons')} disabled={!selectedCategory}>إدارة</button></div></label>
+       <label><span>الصعوبة</span><select value={editing.difficulty} onChange={e=>setEditing({...editing,difficulty:e.target.value as Difficulty})}><option value="EASY">سهل</option><option value="MEDIUM">متوسط</option><option value="HARD">صعب</option></select></label></div>
+      {mode==='advanced'&&<div className="advanced-grid"><label>الامتحان<select value={editing.exam} onChange={e=>setEditing({...editing,exam:e.target.value as Question['exam']})}><option>SAT</option><option>EST</option><option>ACT</option><option value="BEGINNERS">Beginners</option></select></label><label>Module<input type="number" min="1" value={editing.module} onChange={e=>setEditing({...editing,module:Number(e.target.value)})}/></label><label>Domain<input value={editing.domain} onChange={e=>setEditing({...editing,domain:e.target.value})}/></label><label>الوقت بالثواني<input type="number" min="10" value={editing.estimatedTimeSeconds} onChange={e=>setEditing({...editing,estimatedTimeSeconds:Number(e.target.value)})}/></label><label className="wide">ID<input value={editing.id} onChange={e=>setEditing({...editing,id:e.target.value})}/></label><label className="wide">Tags<input value={editing.tags.filter(t=>!t.startsWith(CATEGORY_TAG)).join(', ')} onChange={e=>setEditing({...editing,tags:[...editing.tags.filter(t=>t.startsWith(CATEGORY_TAG)),...e.target.value.split(',').map(x=>x.trim()).filter(Boolean)]})}/></label></div>}
+      <RichEditor label="القطعة أو النص — اختياري" value={editing.passage||''} onChange={v=>setEditing({...editing,passage:v})} placeholder="الصق القطعة هنا، ثم نسّقها كما تريد..." minHeight={160}/><RichEditor label="نص السؤال" value={editing.prompt} onChange={v=>setEditing({...editing,prompt:v})} placeholder="اكتب السؤال هنا..." minHeight={110}/>
+      <section className="easy-choices"><div className="section-title"><div><b>الاختيارات</b><span>اضغط على الدائرة لتحديد الإجابة الصحيحة</span></div><button onClick={()=>setEditing({...editing,choices:[...editing.choices].sort(()=>Math.random()-.5)})}>خلط الترتيب</button></div>{editing.choices.map((c,i)=><div className={`easy-choice ${editing.correctChoiceId===c.id?'correct':''}`} key={`${c.id}-${i}`}><label><input type="radio" name="correct" checked={editing.correctChoiceId===c.id} onChange={()=>setEditing({...editing,correctChoiceId:c.id})}/><b>{c.id}</b></label><div contentEditable suppressContentEditableWarning data-placeholder={`اكتب الاختيار ${c.id}`} dangerouslySetInnerHTML={{__html:c.text}} onInput={e=>updateChoice(i,e.currentTarget.innerHTML)}/></div>)}</section>
+      <RichEditor label="شرح الإجابة" value={editing.explanation} onChange={v=>setEditing({...editing,explanation:v})} placeholder="اكتب شرحًا بسيطًا لسبب صحة الإجابة..." minHeight={110}/><div className="sticky-save"><div><span>حفظ محلي آمن عند الضغط على الحفظ</span><button className="text-btn" onClick={duplicate}>تكرار السؤال</button></div><div><button className="light-btn" onClick={()=>setPreview(true)}>معاينة كطالب</button><button className="light-btn" onClick={()=>save(false,true)}>حفظ كمسودة</button><button className="light-btn" onClick={()=>save(false,false)}>حفظ</button><button className="main-btn" onClick={()=>save(true,false)}>حفظ وإضافة سؤال جديد</button></div></div>
+    </section></section>
+   {manager&&<div className="taxonomy-modal" onClick={()=>setManager(null)}><article onClick={e=>e.stopPropagation()}><header><div><small>{manager==='categories'?'تنظيم بنك الأسئلة':'داخل قسم '+selectedCategory?.name}</small><h2>{manager==='categories'?'إدارة الأقسام':'إدارة أسماء الدروس'}</h2></div><button onClick={()=>setManager(null)}>×</button></header>{manager==='categories'?<><button className="taxonomy-add" onClick={addCategory}>+ إضافة قسم جديد</button><div className="taxonomy-list">{taxonomy.categories.map(c=><div key={c.id}><span><b>{c.name}</b><small>{questions.filter(q=>categoryIdOf(q,taxonomy)===c.id).length} سؤال · {c.lessons.length} درس</small></span><button onClick={()=>renameCategory(c)}>تعديل</button><button className="danger" onClick={()=>deleteCategory(c)}>حذف</button></div>)}</div></>:<><button className="taxonomy-add" onClick={addLesson}>+ إضافة درس جديد</button><div className="taxonomy-list">{selectedCategory?.lessons.length?selectedCategory.lessons.map(lesson=><div key={lesson}><span><b>{lesson}</b><small>{questions.filter(q=>categoryIdOf(q,taxonomy)===selectedCategory.id&&q.skill===lesson).length} سؤال</small></span><button onClick={()=>renameLesson(lesson)}>تعديل</button><button className="danger" onClick={()=>deleteLesson(lesson)}>حذف</button></div>):<p className="taxonomy-empty">لا توجد دروس بعد. أضف أول درس للقسم.</p>}</div></>}</article></div>}
+   {preview&&<div className="simple-preview-modal" onClick={()=>setPreview(false)}><article onClick={e=>e.stopPropagation()}><button className="preview-close" onClick={()=>setPreview(false)}>×</button>{editing.passage&&<section><small>PASSAGE</small><div dangerouslySetInnerHTML={{__html:editing.passage}}/></section>}<section><small>QUESTION</small><div className="preview-question" dangerouslySetInnerHTML={{__html:editing.prompt}}/><div className="preview-answers">{editing.choices.map(c=><div className={c.id===editing.correctChoiceId?'correct':''} key={c.id}><b>{c.id}</b><span dangerouslySetInnerHTML={{__html:c.text}}/></div>)}</div></section></article></div>}{toast&&<div className="cms-toast">{toast}</div>}
+ </main>
 }
