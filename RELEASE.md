@@ -99,3 +99,9 @@
 - Added paper-style EST booklet with separate interactive bubble sheet.
 - Linked paper questions and bubble rows with synchronized navigation and review flags.
 - Added Paper View / Digital View switch and responsive mobile layout.
+
+## V47
+- Bulk student import and CSV template.
+- Parent codes and parent export sheet.
+- Public student registration form at /register.
+- Direct creation of student and parent accounts from registration.

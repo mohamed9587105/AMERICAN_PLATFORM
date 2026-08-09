@@ -1,0 +1,3 @@
+BUILD_OK=False
+
+node_modules not present in packaged artifact; local build check skipped.

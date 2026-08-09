@@ -36,6 +36,13 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
+    "**/PARENT_APP_*",
+    "**/backup/**",
+    "**/backups/**",
+    ".next",
+    "PARENT_APP_*",
+    "backup",
+    "backups",
     "node_modules"
   ]
 }
