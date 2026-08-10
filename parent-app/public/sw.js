@@ -1,4 +1,4 @@
-const CACHE="parent-app-v54";
+const CACHE="parent-app-v124";
 const CORE=["/parent-icon.svg"];
 
 self.addEventListener("install",event=>{
