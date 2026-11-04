@@ -23,7 +23,29 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: TSX syntax
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const ts = require('typescript');
+          const filename = 'components/homework-admin-manager.tsx';
+          const source = fs.readFileSync(filename, 'utf8');
+          const result = ts.transpileModule(source, {
+            fileName: filename,
+            reportDiagnostics: true,
+            compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 }
+          });
+          const syntaxErrors = (result.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error);
+          if (syntaxErrors.length) {
+            console.error(ts.formatDiagnosticsWithColorAndContext(syntaxErrors, {
+              getCanonicalFileName: x => x, getCurrentDirectory: () => process.cwd(), getNewLine: () => '\n'
+            }));
+            process.exit(1);
+          }
+          console.log('TSX syntax parse: PASS');
+          NODE
       - name: TypeScript
         run: npm run typecheck
-      - name: Build
+      - name: Build (run even if typecheck failed)
+        if: success() || failure()
         run: npm run build
