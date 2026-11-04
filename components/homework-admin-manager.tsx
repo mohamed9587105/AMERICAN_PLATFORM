@@ -312,6 +312,7 @@ export default function HomeworkAdminManager({
     message: string;
   } | null>(null);
   const saveActionRef = useRef(false);
+  const submissionsFetchingRef = useRef(false);
   const saveFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -888,47 +889,63 @@ export default function HomeworkAdminManager({
     setTimeout(() => setToast(""), 2200);
   };
   const refreshHomeworkSubmissions = async () => {
-    let localRows: any[] = [];
+    // A focus event and the regular timer can fire together.
+    // Never issue overlapping requests for the same admin results.
+    if (submissionsFetchingRef.current) return;
+    submissionsFetchingRef.current = true;
     try {
-      const parsed = JSON.parse(
-        localStorage.getItem(HOMEWORK_SUBMISSIONS_KEY) || "[]",
-      );
-      if (Array.isArray(parsed)) localRows = parsed;
-    } catch {}
-    try {
-      const response = await fetch("/api/admin/submissions?kind=homework", {
-        cache: "no-store",
-      });
-      const data = await response.json().catch(() => ({}));
-      const serverRows =
-        response.ok && Array.isArray(data?.submissions) ? data.submissions : [];
-      const merged = new Map<string, any>();
-      for (const row of [...localRows, ...serverRows]) {
-        const assignmentId = String(row.homeworkId || row.assignmentId || "");
-        const studentId = String(
-          row.studentId || row.student || "local-student",
+      let localRows: any[] = [];
+      try {
+        const parsed = JSON.parse(
+          localStorage.getItem(HOMEWORK_SUBMISSIONS_KEY) || "[]",
         );
-        if (assignmentId) merged.set(`${assignmentId}:${studentId}`, row);
+        if (Array.isArray(parsed)) localRows = parsed;
+      } catch {}
+      try {
+        const response = await fetch("/api/admin/submissions?kind=homework", {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        const serverRows =
+          response.ok && Array.isArray(data?.submissions) ? data.submissions : [];
+        const merged = new Map<string, any>();
+        for (const row of [...localRows, ...serverRows]) {
+          const assignmentId = String(row.homeworkId || row.assignmentId || "");
+          const studentId = String(
+            row.studentId || row.student || "local-student",
+          );
+          if (assignmentId) merged.set(`${assignmentId}:${studentId}`, row);
+        }
+        setSubmissions(
+          [...merged.values()].sort(
+            (a, b) =>
+              new Date(b.submittedAt || 0).getTime() -
+              new Date(a.submittedAt || 0).getTime(),
+          ),
+        );
+      } catch {
+        setSubmissions(localRows);
       }
-      setSubmissions(
-        [...merged.values()].sort(
-          (a, b) =>
-            new Date(b.submittedAt || 0).getTime() -
-            new Date(a.submittedAt || 0).getTime(),
-        ),
-      );
-    } catch {
-      setSubmissions(localRows);
+    } finally {
+      submissionsFetchingRef.current = false;
     }
   };
   useEffect(() => {
     if (fullScreen || tab !== "results") return;
-    void refreshHomeworkSubmissions();
-    const refresh = () => void refreshHomeworkSubmissions();
+    // Keep the existing 12-second foreground refresh cadence, but avoid
+    // polling a hidden admin tab. Refresh once as soon as it becomes visible.
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void refreshHomeworkSubmissions();
+      }
+    };
+    refresh();
     window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
     const timer = window.setInterval(refresh, 12_000);
     return () => {
       window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
       window.clearInterval(timer);
     };
   }, [fullScreen, tab]);

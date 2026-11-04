@@ -1,0 +1,91 @@
+name: Homework performance change checks
+
+on:
+  push:
+    branches:
+      - perf/homework-results-dedupe-20261104
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Public platform reachability and latency (read-only)
+        continue-on-error: true
+        run: |
+          set -u
+          for path in / /student-login /admin-login; do
+            echo "Checking https://americandiplomaplatform.com${path}"
+            curl --silent --show-error --location --max-time 12 --output /dev/null \
+              --write-out 'HTTP=%{http_code} dns=%{time_namelookup}s connect=%{time_connect}s ttfb=%{time_starttransfer}s total=%{time_total}s size=%{size_download}B\\n' \
+              "https://americandiplomaplatform.com${path}" || true
+          done
+      - name: TSX syntax
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const ts = require('typescript');
+          const filename = 'components/homework-admin-manager.tsx';
+          const source = fs.readFileSync(filename, 'utf8');
+          const result = ts.transpileModule(source, {
+            fileName: filename,
+            reportDiagnostics: true,
+            compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 }
+          });
+          const syntaxErrors = (result.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error);
+          if (syntaxErrors.length) {
+            console.error(ts.formatDiagnosticsWithColorAndContext(syntaxErrors, {
+              getCanonicalFileName: x => x, getCurrentDirectory: () => process.cwd(), getNewLine: () => '\n'
+            }));
+            process.exit(1);
+          }
+          console.log('TSX syntax parse: PASS');
+          NODE
+      - name: TypeScript diagnostic regression against base
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin prod-v6968-current
+          git show FETCH_HEAD:components/homework-admin-manager.tsx > /tmp/homework-manager-base.tsx
+          cp components/homework-admin-manager.tsx /tmp/homework-manager-feature.tsx
+          typecheck_report() {
+            local label="$1"
+            npm run typecheck -- --pretty false > "/tmp/${label}.log" 2>&1 || true
+            grep -E 'error TS[0-9]+:' "/tmp/${label}.log" |
+              sed -E 's/[(][0-9]+,[0-9]+[)]//g' |
+              LC_ALL=C sort -u > "/tmp/${label}.errors" || true
+          }
+          typecheck_report feature
+          cp /tmp/homework-manager-base.tsx components/homework-admin-manager.tsx
+          typecheck_report baseline
+          cp /tmp/homework-manager-feature.tsx components/homework-admin-manager.tsx
+          if [ ! -s /tmp/baseline.errors ]; then
+            echo 'Missing baseline TypeScript diagnostics; cannot compare'
+            exit 1
+          fi
+          comm -13 /tmp/baseline.errors /tmp/feature.errors > /tmp/new-errors.txt
+          echo "Baseline unique diagnostics: $(wc -l < /tmp/baseline.errors)"
+          echo "Feature unique diagnostics: $(wc -l < /tmp/feature.errors)"
+          if [ -s /tmp/new-errors.txt ]; then
+            echo 'New TypeScript diagnostics detected:'
+            cat /tmp/new-errors.txt
+            exit 1
+          fi
+          echo 'TypeScript diagnostic regression check: PASS (no new errors)'
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Build (run even if typecheck failed)
+        if: success() || failure()
+        run: npm run build
