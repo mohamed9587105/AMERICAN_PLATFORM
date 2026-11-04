@@ -894,38 +894,38 @@ export default function HomeworkAdminManager({
     if (submissionsFetchingRef.current) return;
     submissionsFetchingRef.current = true;
     try {
-    let localRows: any[] = [];
-    try {
-      const parsed = JSON.parse(
-        localStorage.getItem(HOMEWORK_SUBMISSIONS_KEY) || "[]",
-      );
-      if (Array.isArray(parsed)) localRows = parsed;
-    } catch {}
-    try {
-      const response = await fetch("/api/admin/submissions?kind=homework", {
-        cache: "no-store",
-      });
-      const data = await response.json().catch(() => ({}));
-      const serverRows =
-        response.ok && Array.isArray(data?.submissions) ? data.submissions : [];
-      const merged = new Map<string, any>();
-      for (const row of [...localRows, ...serverRows]) {
-        const assignmentId = String(row.homeworkId || row.assignmentId || "");
-        const studentId = String(
-          row.studentId || row.student || "local-student",
+      let localRows: any[] = [];
+      try {
+        const parsed = JSON.parse(
+          localStorage.getItem(HOMEWORK_SUBMISSIONS_KEY) || "[]",
         );
-        if (assignmentId) merged.set(`${assignmentId}:${studentId}`, row);
+        if (Array.isArray(parsed)) localRows = parsed;
+      } catch {}
+      try {
+        const response = await fetch("/api/admin/submissions?kind=homework", {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        const serverRows =
+          response.ok && Array.isArray(data?.submissions) ? data.submissions : [];
+        const merged = new Map<string, any>();
+        for (const row of [...localRows, ...serverRows]) {
+          const assignmentId = String(row.homeworkId || row.assignmentId || "");
+          const studentId = String(
+            row.studentId || row.student || "local-student",
+          );
+          if (assignmentId) merged.set(`${assignmentId}:${studentId}`, row);
+        }
+        setSubmissions(
+          [...merged.values()].sort(
+            (a, b) =>
+              new Date(b.submittedAt || 0).getTime() -
+              new Date(a.submittedAt || 0).getTime(),
+          ),
+        );
+      } catch {
+        setSubmissions(localRows);
       }
-      setSubmissions(
-        [...merged.values()].sort(
-          (a, b) =>
-            new Date(b.submittedAt || 0).getTime() -
-            new Date(a.submittedAt || 0).getTime(),
-        ),
-      );
-    } catch {
-      setSubmissions(localRows);
-    }
     } finally {
       submissionsFetchingRef.current = false;
     }
