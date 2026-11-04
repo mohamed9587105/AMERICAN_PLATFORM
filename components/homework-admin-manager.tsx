@@ -312,6 +312,7 @@ export default function HomeworkAdminManager({
     message: string;
   } | null>(null);
   const saveActionRef = useRef(false);
+  const submissionsFetchingRef = useRef(false);
   const saveFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -888,6 +889,11 @@ export default function HomeworkAdminManager({
     setTimeout(() => setToast(""), 2200);
   };
   const refreshHomeworkSubmissions = async () => {
+    // A focus event and the regular timer can fire together.
+    // Never issue overlapping requests for the same admin results.
+    if (submissionsFetchingRef.current) return;
+    submissionsFetchingRef.current = true;
+    try {
     let localRows: any[] = [];
     try {
       const parsed = JSON.parse(
@@ -920,15 +926,26 @@ export default function HomeworkAdminManager({
     } catch {
       setSubmissions(localRows);
     }
+    } finally {
+      submissionsFetchingRef.current = false;
+    }
   };
   useEffect(() => {
     if (fullScreen || tab !== "results") return;
-    void refreshHomeworkSubmissions();
-    const refresh = () => void refreshHomeworkSubmissions();
+    // Keep the existing 12-second foreground refresh cadence, but avoid
+    // polling a hidden admin tab. Refresh once as soon as it becomes visible.
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void refreshHomeworkSubmissions();
+      }
+    };
+    refresh();
     window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
     const timer = window.setInterval(refresh, 12_000);
     return () => {
       window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
       window.clearInterval(timer);
     };
   }, [fullScreen, tab]);
